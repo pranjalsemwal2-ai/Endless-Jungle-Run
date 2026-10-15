@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Endless Jungle Run</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    padding: 18px; background: #101827; color: #f7fbff;
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+  .wrap { width: min(960px, 100%); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: clamp(1.3rem, 3vw, 2rem); letter-spacing: .02em; }
+  .tag { color: #b5c9df; font-size: .9rem; }
+  .game-shell { position: relative; overflow: hidden; border: 1px solid #35536d; border-radius: 18px; background: #8ce5f2; box-shadow: 0 20px 60px #0006; }
+  canvas { display: block; width: 100%; height: auto; touch-action: manipulation; }
+  .hud { position: absolute; inset: 14px 16px auto; display: flex; justify-content: space-between; pointer-events: none; font-weight: 800; text-shadow: 0 2px 3px #17445b66; }
+  .pill { padding: 8px 12px; border-radius: 999px; background: #102b3cbd; border: 1px solid #ffffff45; }
+  .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; background: #07162455; }
+  .panel { width: min(370px, 100%); text-align: center; padding: 24px; border-radius: 20px; background: #10283bea; border: 1px solid #ffffff45; box-shadow: 0 12px 35px #0003; }
+  .panel h2 { margin: 0 0 8px; font-size: 1.8rem; }
+  .panel p { color: #d2e6f5; line-height: 1.45; margin: 0 0 18px; }
+  button { border: 0; border-radius: 12px; padding: 12px 20px; background: #b9f36b; color: #18301b; font: inherit; font-weight: 900; cursor: pointer; }
+  button:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+  .help { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; color: #b5c9df; font-size: .9rem; }
+  .help strong { color: #fff; }
+  .hidden { display: none; }
+</style>
+<meta name="theme-color" content="#101827">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <div>
+      <h1>🌿 Endless Jungle Run</h1>
+      <div class="tag">A tiny endless-runner prototype</div>
+    </div>
+    <div class="tag">Build 01 · Offline-ready</div>
+  </header>
+
+  <section class="game-shell" aria-label="Endless runner game">
+    <canvas id="game" width="900" height="420" aria-label="Game scene"></canvas>
+    <div class="hud">
+      <div class="pill">DISTANCE <span id="score">00000</span></div>
+      <div class="pill">BEST <span id="best">00000</span></div>
+    </div>
+    <div class="overlay" id="overlay">
+      <div class="panel">
+        <h2 id="panelTitle">Ready, runner?</h2>
+        <p id="panelText">Jump over the hungry plants. The longer you survive, the faster the jungle gets!</p>
+        <button id="startBtn">Start running</button>
+      </div>
+    </div>
+  </section>
+  <div class="help">
+    <span><strong>Jump:</strong> Space / ↑ / W / tap the game</span>
+    <span><strong>Restart:</strong> Enter after game over</span>
+    <span>Tip: jump just before a plant reaches you.</span>
+  </div>
+</main>
+
+<script>
+(() => {
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const scoreEl = document.getElementById("score");
+  const bestEl = document.getElementById("best");
+  const overlay = document.getElementById("overlay");
+  const panelTitle = document.getElementById("panelTitle");
+  const panelText = document.getElementById("panelText");
+  const startBtn = document.getElementById("startBtn");
+
+  const W = canvas.width, H = canvas.height, groundY = 342;
+  let state = "ready", score = 0, speed = 6, spawnTimer = 70, lastTime = 0;
+  let best = 0;
+  try { best = Number(localStorage.getItem("ejr-best") || 0); } catch (_) {}
+  bestEl.textContent = formatScore(best);
+
+  const hero = { x: 125, y: groundY - 58, w: 42, h: 58, vy: 0, onGround: true, runFrame: 0 };
+  let obstacles = [], particles = [], clouds = [];
+
+  for (let i = 0; i < 5; i++) {
+    clouds.push({ x: i * 220 + 40, y: 42 + (i % 3) * 38, s: 0.7 + (i % 2) * 0.3 });
+  }
+
+  function formatScore(n) { return String(Math.floor(n)).padStart(5, "0"); }
+
+  function resetGame() {
+    score = 0; speed = 6; spawnTimer = 55; obstacles = []; particles = [];
+    hero.y = groundY - hero.h; hero.vy = 0; hero.onGround = true; hero.runFrame = 0;
+    state = "playing";
+    overlay.classList.add("hidden");
+    lastTime = performance.now();
+  }
+
+  function jump() {
+    if (state !== "playing") return;
+    if (hero.onGround) {
+      hero.vy = -14.7;
+      hero.onGround = false;
+      for (let i = 0; i < 6; i++) particles.push({ x: hero.x + 18, y: groundY - 3, vx: (Math.random() - .5) * 3, vy: -Math.random() * 3, life: 18 });
+    }
+  }
+
+  function gameOver() {
+    state = "over";
+    best = Math.max(best, Math.floor(score));
+    try { localStorage.setItem("ejr-best", String(best)); } catch (_) {}
+    bestEl.textContent = formatScore(best);
+    panelTitle.textContent = "Ouch! Plant snack time.";
+    panelText.textContent = `You travelled ${Math.floor(score)} metres. Ready to try again?`;
+    startBtn.textContent = "Run again";
+    overlay.classList.remove("hidden");
+  }
+
+  function roundedRect(x, y, w, h, r, color) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+  }
+
+  function drawCloud(x, y, s) {
+    ctx.fillStyle = "#ffffffb8";
+    ctx.beginPath();
+    ctx.arc(x, y, 18*s, 0, Math.PI*2);
+    ctx.arc(x+20*s, y-10*s, 23*s, 0, Math.PI*2);
+    ctx.arc(x+45*s, y, 17*s, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawBackground(dt) {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "#74d7f0"); sky.addColorStop(1, "#d1f5d4");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+    // distant hills
+    ctx.fillStyle = "#82d5ad";
+    ctx.beginPath(); ctx.moveTo(0, 280);
+    for (let x = 0; x <= W; x += 90) ctx.quadraticCurveTo(x+45, 220 + Math.sin(x*.018)*18, x+90, 280);
+    ctx.lineTo(W, groundY); ctx.lineTo(0, groundY); ctx.fill();
+
+    ctx.fillStyle = "#55bd8b";
+    ctx.beginPath(); ctx.moveTo(0, 310);
+    for (let x = 0; x <= W; x += 120) ctx.quadraticCurveTo(x+60, 265 + Math.cos(x*.014)*15, x+120, 310);
+    ctx.lineTo(W, groundY); ctx.lineTo(0, groundY); ctx.fill();
+
+    clouds.forEach(c => {
+      drawCloud(c.x, c.y, c.s);
+      if (state === "playing") c.x -= speed * .15 * dt;
+      if (c.x < -80) c.x = W + 40;
+    });
+
+    // sun
+    ctx.fillStyle = "#fff3a6"; ctx.beginPath(); ctx.arc(760, 76, 34, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#fff8c8"; ctx.beginPath(); ctx.arc(750, 66, 8, 0, Math.PI*2); ctx.fill();
+
+    // ground
+    ctx.fillStyle = "#398653"; ctx.fillRect(0, groundY, W, H-groundY);
+    ctx.fillStyle = "#70d45f"; ctx.fillRect(0, groundY, W, 12);
+    ctx.fillStyle = "#b0ed74";
+    for (let x = -20; x < W+20; x += 44) {
+      const offset = state === "playing" ? (score * 2.1) % 44 : 0;
+      roundedRect(x - offset, groundY+28, 18, 5, 3, "#2e744a");
+      roundedRect(x - offset+20, groundY+54, 9, 4, 2, "#2e744a");
+    }
+  }
+
+  function drawHero() {
+    const bob = state === "playing" && hero.onGround ? Math.sin(hero.runFrame) * 2 : 0;
+    const x = hero.x, y = hero.y + bob;
+    // shadow
+    ctx.fillStyle = "#164b3b38"; ctx.beginPath(); ctx.ellipse(x+22, groundY+3, 28, 6, 0, 0, Math.PI*2); ctx.fill();
+    // legs, animated simple running pose
+    const legSwing = hero.onGround && state === "playing" ? Math.sin(hero.runFrame) * 7 : 0;
+    roundedRect(x+8, y+40, 12, 17, 5, "#274d9c");
+    roundedRect(x+23, y+40, 12, 17, 5, "#274d9c");
+    ctx.strokeStyle = "#18386f"; ctx.lineWidth = 5; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x+14, y+53); ctx.lineTo(x+13+legSwing, y+58); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+29, y+53); ctx.lineTo(x+30-legSwing, y+58); ctx.stroke();
+    // body and backpack
+    roundedRect(x+5, y+20, 34, 27, 8, "#f29a45");
+    roundedRect(x+1, y+25, 9, 18, 4, "#df6c38");
+    // face
+    roundedRect(x+9, y+3, 31, 27, 9, "#ffd09a");
+    // hair
+    ctx.fillStyle = "#4b2d32";
+    ctx.beginPath(); ctx.moveTo(x+8,y+14); ctx.lineTo(x+8,y+5); ctx.quadraticCurveTo(x+17,y-4,x+31,y+2); ctx.lineTo(x+39,y+9); ctx.lineTo(x+30,y+8); ctx.lineTo(x+24,y+14); ctx.closePath(); ctx.fill();
+    // eye and smile
+    ctx.fillStyle = "#263746"; ctx.beginPath(); ctx.arc(x+31,y+16,2.3,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "#a65339"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x+29,y+20,5,.2,1.25); ctx.stroke();
+    // scarf
+    roundedRect(x+7, y+26, 28, 6, 3, "#4dd6c3");
+    ctx.fillStyle = "#4dd6c3"; ctx.beginPath(); ctx.moveTo(x+12,y+30); ctx.lineTo(x+5,y+39); ctx.lineTo(x+16,y+35); ctx.fill();
+    // boots
+    roundedRect(x+4+legSwing*.35, y+52, 18, 7, 3, "#493b39");
+    roundedRect(x+23-legSwing*.35, y+52, 18, 7, 3, "#493b39");
+  }
+
+  function drawPlant(o) {
+    const x = o.x, base = groundY;
+    // pipe-like leafy base
+    roundedRect(x+7, base-30, 36, 30, 7, "#277b4b");
+    roundedRect(x+2, base-34, 46, 10, 5, "#49b65d");
+    // stalk
+    ctx.strokeStyle = "#2b914f"; ctx.lineWidth = 10; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x+25, base-30); ctx.quadraticCurveTo(x+22, base-48, x+25, base-58); ctx.stroke();
+    // head
+    ctx.fillStyle = "#43bd59"; ctx.beginPath(); ctx.ellipse(x+25, base-64, 22, 17, -.12, 0, Math.PI*2); ctx.fill();
+    // top leaf
+    ctx.fillStyle = "#268f4d"; ctx.beginPath(); ctx.ellipse(x+12, base-78, 12, 5, -.6, 0, Math.PI*2); ctx.fill();
+    // mouth
+    ctx.fillStyle = "#7c263c"; ctx.beginPath(); ctx.ellipse(x+31, base-60, 12, 8, .18, 0, Math.PI*2); ctx.fill();
+    // teeth
+    ctx.fillStyle = "#fff5d8";
+    for (let i=0; i<4; i++) {
+      ctx.beginPath(); ctx.moveTo(x+22+i*5,base-65); ctx.lineTo(x+24+i*5,base-59); ctx.lineTo(x+26+i*5,base-65); ctx.fill();
+    }
+    // eyes
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x+19,base-69,5,0,Math.PI*2); ctx.arc(x+32,base-70,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#203b35"; ctx.beginPath(); ctx.arc(x+20,base-68,2,0,Math.PI*2); ctx.arc(x+33,base-69,2,0,Math.PI*2); ctx.fill();
+  }
+
+  function spawnPlant() {
+    const size = Math.random() < .25 ? 1.15 : 1;
+    obstacles.push({ x: W + 30, w: 50*size, h: 84*size, size });
+  }
+
+  function update(dt) {
+    if (state !== "playing") return;
+    score += dt * speed * .12;
+    speed = Math.min(12.5, 6 + score / 220);
+    scoreEl.textContent = formatScore(score);
+    hero.vy += .72 * dt;
+    hero.y += hero.vy * dt;
+    if (hero.y + hero.h >= groundY) {
+      hero.y = groundY - hero.h; hero.vy = 0; hero.onGround = true;
+    }
+    hero.runFrame += .22 * dt * (speed/6);
+
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnPlant();
+      spawnTimer = Math.max(48, 92 + Math.random()*40 - speed*3.2);
+    }
+
+    obstacles.forEach(o => o.x -= speed * dt);
+    obstacles = obstacles.filter(o => o.x + o.w > -20);
+
+    // forgiving collision box: visual art can overlap slightly without a hit
+    const hx = hero.x+7, hy = hero.y+7, hw = hero.w-13, hh = hero.h-10;
+    for (const o of obstacles) {
+      const ox = o.x+7, oy = groundY-o.h+7, ow = o.w-14, oh = o.h-7;
+      if (hx < ox+ow && hx+hw > ox && hy < oy+oh && hy+hh > oy) {
+        gameOver(); break;
+      }
+    }
+
+    particles.forEach(p => { p.x += p.vx*dt; p.y += p.vy*dt; p.vy += .2*dt; p.life -= dt; });
+    particles = particles.filter(p => p.life > 0);
+  }
+
+  function draw() {
+    drawBackground(1);
+    obstacles.forEach(drawPlant);
+    particles.forEach(p => { ctx.globalAlpha = Math.max(0,p.life/18); ctx.fillStyle="#d7f7a1"; ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; });
+    drawHero();
+    if (state === "ready") {
+      ctx.fillStyle = "#143e4d"; ctx.font = "700 17px system-ui"; ctx.textAlign = "center";
+      ctx.fillText("Press Start, then jump to dodge the plants!", W/2, 250);
+    }
+  }
+
+  function loop(now) {
+    const dt = Math.min((now - lastTime) / 16.667 || 1, 2);
+    lastTime = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  startBtn.addEventListener("click", resetGame);
+  canvas.addEventListener("pointerdown", () => {
+    if (state === "playing") jump();
+  });
+  window.addEventListener("keydown", e => {
+    if (["Space","ArrowUp","KeyW"].includes(e.code)) {
+      e.preventDefault();
+      if (state === "playing") jump();
+      else if (state === "ready" || state === "over") resetGame();
+    } else if (e.code === "Enter" && state !== "playing") resetGame();
+  });
+
+  // Draw a stable first frame; then start the animation loop.
+  draw();
+  requestAnimationFrame((now) => { lastTime = now; loop(now); });
+})();
+</script>
+
+<script>
+  // Register the offline cache only when served from HTTPS or localhost.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js")
+        .catch((error) => console.log("Offline setup could not register yet:", error));
+    });
+  }
+</script>
+</body>
+</html>
