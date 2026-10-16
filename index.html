@@ -235,13 +235,13 @@
     if (state !== "playing") return;
     score += dt * speed * .12;
     
-if (score < 100) {
+if (score > 100) {
     speed = 4;
-} else if (score < 200) {
+} else if (score > 200) {
     speed = 6;
-} else if (score < 500) {
+} else if (score > 500) {
     speed = 8;
-} else if (score < 900) {
+} else if (score > 900) {
     speed = 10;
 } else {
     speed = 15;
