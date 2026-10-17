@@ -225,15 +225,70 @@
     ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x+19,base-69,5,0,Math.PI*2); ctx.arc(x+32,base-70,5,0,Math.PI*2); ctx.fill();
     ctx.fillStyle = "#203b35"; ctx.beginPath(); ctx.arc(x+20,base-68,2,0,Math.PI*2); ctx.arc(x+33,base-69,2,0,Math.PI*2); ctx.fill();
   }
+  function drawBird(b) {
+    const x = b.x;
+    const y = b.y + Math.sin(b.flap) * 4;
+
+    // Body
+    ctx.fillStyle = "#493c35";
+    ctx.beginPath();
+    ctx.ellipse(x + 22, y + 15, 15, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wings
+    ctx.fillStyle = "#72594a";
+    ctx.beginPath();
+    ctx.moveTo(x + 18, y + 13);
+    ctx.lineTo(x + 8, y + (Math.sin(b.flap) * 10));
+    ctx.lineTo(x + 28, y + 12);
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = "#f6b638";
+    ctx.beginPath();
+    ctx.moveTo(x + 34, y + 12);
+    ctx.lineTo(x + 44, y + 16);
+    ctx.lineTo(x + 34, y + 19);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(x + 30, y + 10, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#111111";
+    ctx.beginPath();
+    ctx.arc(x + 31, y + 10, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   function spawnPlant() {
-    const size = Math.random() < .25 ? 1.15 : 1;
-    obstacles.push({ x: W + 30, w: 50*size, h: 84*size, size });
+    const size = Math.random() < 0.25 ? 1.15 : 1;
+    obstacles.push({
+        type: "plant",
+        x: W + 30,
+        w: 50 * size,
+        h: 84 * size,
+        size
+    });
+  }
+  function spawnBird() {
+    const y = Math.random() < 0.5 ? 225 : 270;
+
+    obstacles.push({
+        type: "bird",
+        x: W + 30,
+        y: y,
+        w: 44,
+        h: 28,
+        flap: Math.random() * 6
+    });
   }
 
   function update(dt) {
     if (state !== "playing") return;
-    score += dt * speed * .12;
+    score += dt / 1000;
     
 if (score > 100) {
     speed = 4;
@@ -257,7 +312,7 @@ if (score > 100) {
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
       spawnPlant();
-      spawnTimer = Math.max(48, 92 + Math.random()*40 - speed*3.2);
+spawnTimer = 95 + Math.random() * 90;
     }
 
     obstacles.forEach(o => o.x -= speed * dt);
